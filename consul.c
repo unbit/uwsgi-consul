@@ -65,15 +65,15 @@ static void consul_loop(struct uwsgi_thread *ut) {
 	}
 	for(;;) {
 		// initialize curl for the service
-                ucs->curl = curl_easy_init();
-                if (!ucs->curl) {
-                        uwsgi_log("[consul] unable to initialize curl\n");
+		ucs->curl = curl_easy_init();
+		if (!ucs->curl) {
+			uwsgi_log("[consul] unable to initialize curl\n");
 			goto next;
-                }
+		}
 		struct curl_slist *headers = NULL;
 		headers = curl_slist_append(headers, "Content-Type: application/json");
 		curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
-        	curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);	
+		curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
 		curl_easy_setopt(ucs->curl, CURLOPT_HTTPHEADER, headers); 
 		curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->register_url);
 		curl_easy_setopt(ucs->curl, CURLOPT_CUSTOMREQUEST, "PUT");
@@ -104,55 +104,55 @@ static void consul_loop(struct uwsgi_thread *ut) {
 				uwsgi_log("[consul] HTTP api returned non-200 response code: %d\n", (int) http_code);
 				curl_easy_cleanup(ucs->curl);
 				goto next;
-			}	
+			}
 		}
 		curl_easy_cleanup(ucs->curl);
 
 		for(;;) {
 			// now call the pass check api
 			// initialize curl for the service
-                	ucs->curl = curl_easy_init();
-                	if (!ucs->curl) {
-                        	uwsgi_log("[consul] unable to initialize curl\n");
+			ucs->curl = curl_easy_init();
+			if (!ucs->curl) {
+				uwsgi_log("[consul] unable to initialize curl\n");
 				break;
-                	}
+			}
 			curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
-                	curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
+			curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
 			curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->check_url);
 			if (ucs->ssl_no_verify) {
-                        	curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
-                        	curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
-                	}
+				curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
+				curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
+			}
 			if (ucs->debug) {
 				curl_easy_setopt(ucs->curl, CURLOPT_WRITEFUNCTION, consul_debug);
 				curl_easy_setopt(ucs->curl, CURLOPT_HEADER, 1L);
 			}
-                	res = curl_easy_perform(ucs->curl);
-                	if (res != CURLE_OK) {
-                        	uwsgi_log("[consul] error sending request to %s: %s\n", ucs->check_url, curl_easy_strerror(res));
-                		curl_easy_cleanup(ucs->curl);
+			res = curl_easy_perform(ucs->curl);
+			if (res != CURLE_OK) {
+				uwsgi_log("[consul] error sending request to %s: %s\n", ucs->check_url, curl_easy_strerror(res));
+				curl_easy_cleanup(ucs->curl);
 				break;
-                	}
-                	else {
-                        	long http_code = 0;
+			}
+			else {
+				long http_code = 0;
 #ifdef CURLINFO_RESPONSE_CODE
-                        	curl_easy_getinfo(ucs->curl, CURLINFO_RESPONSE_CODE, &http_code);
+				curl_easy_getinfo(ucs->curl, CURLINFO_RESPONSE_CODE, &http_code);
 #else
-                        	curl_easy_getinfo(ucs->curl, CURLINFO_HTTP_CODE, &http_code);
+				curl_easy_getinfo(ucs->curl, CURLINFO_HTTP_CODE, &http_code);
 #endif
-                        	if (http_code != 200) {
-                                	uwsgi_log("[consul] HTTP api returned non-200 response code: %d\n", (int) http_code);
-                			curl_easy_cleanup(ucs->curl);
+				if (http_code != 200) {
+					uwsgi_log("[consul] HTTP api returned non-200 response code: %d\n", (int) http_code);
+					curl_easy_cleanup(ucs->curl);
 					break;
-                        	}
-                	}
-                	curl_easy_cleanup(ucs->curl);
+				}
+			}
+			curl_easy_cleanup(ucs->curl);
 			// wait for the ttl / 3
 			sleep(ucs->ttl / 3);
 		}
 
 next:
-		sleep(ucs->ttl);
+	sleep(ucs->ttl);
 	}
 }
 
@@ -160,10 +160,10 @@ static void consul_setup() {
 	// check sanity of requested services and 
 	// create the uwsgi_consul_service structures.
 	// each structure will generate a thread sending healthchecks
-	// in backgroudn at the specified frequency (ttl)
+	// in background at the specified frequency (ttl)
 	struct uwsgi_string_list *usl = NULL;
 	uwsgi_foreach(usl, uconsul.services) {
-		struct uwsgi_consul_service *ucs = uwsgi_calloc(sizeof(struct uwsgi_consul_service));	
+		struct uwsgi_consul_service *ucs = uwsgi_calloc(sizeof(struct uwsgi_consul_service));
 		if (uwsgi_kvlist_parse(usl->value, usl->len, ',', '=',
 			"url", &ucs->url,
 			"register_url", &ucs->register_url,
@@ -182,25 +182,25 @@ static void consul_setup() {
 		}
 
 		if (!ucs->id || !ucs->name) {
-			uwsgi_log("[consul]  id and name are required: %s\n", usl->value);
-                        exit(1);	
+			uwsgi_log("[consul] id and name are required: %s\n", usl->value);
+			exit(1);
 		}
 
 		if (!ucs->register_url) {
 			if (!ucs->url) {
 				uwsgi_log("[consul] url or register_url is required: %s\n", usl->value);
-                        	exit(1);
+				exit(1);
 			}
 			ucs->register_url = uwsgi_concat2(ucs->url, "/v1/agent/service/register");
 		}
 
 		if (!ucs->check_url) {
-                        if (!ucs->url) {
-                                uwsgi_log("[consul] url or check_url is required: %s\n", usl->value);
-                                exit(1);
-                        }
-                        ucs->check_url = uwsgi_concat3(ucs->url, "/v1/agent/check/pass/service:", ucs->id);
-                }
+			if (!ucs->url) {
+				uwsgi_log("[consul] url or check_url is required: %s\n", usl->value);
+				exit(1);
+			}
+			ucs->check_url = uwsgi_concat3(ucs->url, "/v1/agent/check/pass/service:", ucs->id);
+		}
 
 
 		// convert ttl to integer
@@ -231,7 +231,7 @@ static void consul_setup() {
 			if (uwsgi_buffer_append(ucs->ub, ",\"Tags\":[", 9)) goto error;
 			char *p, *ctx = NULL;
 			int has_tags = 0;
-        		uwsgi_foreach_token(tags, " ", p, ctx) {
+			uwsgi_foreach_token(tags, " ", p, ctx) {
 				has_tags++;
 				if (uwsgi_buffer_append(ucs->ub, "\"", 1)) goto error;
 				if (uwsgi_buffer_append_json(ucs->ub, p, strlen(p))) goto error;
