@@ -24,6 +24,7 @@ struct uwsgi_consul_service {
 	int ttl;
 	char *ssl_no_verify;
 	char *debug;
+	char *wait_workers;
 	// this buffer holds the pre-generated json
 	struct uwsgi_buffer *ub;
 };
@@ -41,6 +42,27 @@ static size_t consul_debug(void *ptr, size_t size, size_t nmemb, void *data) {
 static void consul_loop(struct uwsgi_thread *ut) {
 	struct uwsgi_consul_service *ucs = (struct uwsgi_consul_service *) ut->data;
 	uwsgi_log("[consul] thread for register_url=%s check_url=%s name=%s id=%s started\n", ucs->register_url, ucs->check_url, ucs->name, ucs->id);
+	if (ucs->wait_workers && uwsgi.numproc > 0) {
+		uwsgi_log_verbose("[consul] waiting for workers before registering service ...\n");
+		for(;;) {
+			int ready = 1;
+			int i;
+			for(i=1;i<=uwsgi.numproc;i++) {
+				if (!uwsgi.workers[i].accepting) {
+					ready = 0;
+					break;
+				}
+			}
+
+			if (!ready) {
+				sleep(1);
+				continue;
+			}
+
+			uwsgi_log_verbose("[consul] workers ready, let's register the service to the agent\n");
+			break;
+		}
+	}
 	for(;;) {
 		// initialize curl for the service
                 ucs->curl = curl_easy_init();
@@ -68,6 +90,8 @@ static void consul_loop(struct uwsgi_thread *ut) {
 		curl_slist_free_all(headers);
 		if (res != CURLE_OK) {
 			uwsgi_log("[consul] error sending request to %s: %s\n", ucs->register_url, curl_easy_strerror(res));	
+			curl_easy_cleanup(ucs->curl);
+			goto next;
 		}
 		else {
 			long http_code = 0;
@@ -78,51 +102,61 @@ static void consul_loop(struct uwsgi_thread *ut) {
 #endif
 			if (http_code != 200) {
 				uwsgi_log("[consul] HTTP api returned non-200 response code: %d\n", (int) http_code);
+				curl_easy_cleanup(ucs->curl);
+				goto next;
 			}	
 		}
 		curl_easy_cleanup(ucs->curl);
 
-		// now call the pass check api
-		// initialize curl for the service
-                ucs->curl = curl_easy_init();
-                if (!ucs->curl) {
-                        uwsgi_log("[consul] unable to initialize curl\n");
-                        goto next;
-                }
-		curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
-                curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
-		curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->check_url);
-		if (ucs->ssl_no_verify) {
-                        curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
-                        curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
-                }
-		if (ucs->debug) {
-			curl_easy_setopt(ucs->curl, CURLOPT_WRITEFUNCTION, consul_debug);
-			curl_easy_setopt(ucs->curl, CURLOPT_HEADER, 1L);
-		}
-                res = curl_easy_perform(ucs->curl);
-                if (res != CURLE_OK) {
-                        uwsgi_log("[consul] error sending request to %s: %s\n", ucs->check_url, curl_easy_strerror(res));
-                }
-                else {
-                        long http_code = 0;
+		for(;;) {
+			// now call the pass check api
+			// initialize curl for the service
+                	ucs->curl = curl_easy_init();
+                	if (!ucs->curl) {
+                        	uwsgi_log("[consul] unable to initialize curl\n");
+				break;
+                	}
+			curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
+                	curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
+			curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->check_url);
+			if (ucs->ssl_no_verify) {
+                        	curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
+                        	curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
+                	}
+			if (ucs->debug) {
+				curl_easy_setopt(ucs->curl, CURLOPT_WRITEFUNCTION, consul_debug);
+				curl_easy_setopt(ucs->curl, CURLOPT_HEADER, 1L);
+			}
+                	res = curl_easy_perform(ucs->curl);
+                	if (res != CURLE_OK) {
+                        	uwsgi_log("[consul] error sending request to %s: %s\n", ucs->check_url, curl_easy_strerror(res));
+                		curl_easy_cleanup(ucs->curl);
+				break;
+                	}
+                	else {
+                        	long http_code = 0;
 #ifdef CURLINFO_RESPONSE_CODE
-                        curl_easy_getinfo(ucs->curl, CURLINFO_RESPONSE_CODE, &http_code);
+                        	curl_easy_getinfo(ucs->curl, CURLINFO_RESPONSE_CODE, &http_code);
 #else
-                        curl_easy_getinfo(ucs->curl, CURLINFO_HTTP_CODE, &http_code);
+                        	curl_easy_getinfo(ucs->curl, CURLINFO_HTTP_CODE, &http_code);
 #endif
-                        if (http_code != 200) {
-                                uwsgi_log("[consul] HTTP api returned non-200 response code: %d\n", (int) http_code);
-                        }
-                }
-                curl_easy_cleanup(ucs->curl);
+                        	if (http_code != 200) {
+                                	uwsgi_log("[consul] HTTP api returned non-200 response code: %d\n", (int) http_code);
+                			curl_easy_cleanup(ucs->curl);
+					break;
+                        	}
+                	}
+                	curl_easy_cleanup(ucs->curl);
+			// wait for the ttl / 3
+			sleep(ucs->ttl / 3);
+		}
+
 next:
-		// wait for the ttl
-		sleep(ucs->ttl / 3);
+		sleep(ucs->ttl);
 	}
 }
 
-static int consul_init() {
+static void consul_setup() {
 	// check sanity of requested services and 
 	// create the uwsgi_consul_service structures.
 	// each structure will generate a thread sending healthchecks
@@ -141,6 +175,7 @@ static int consul_init() {
 			"ttl", &ucs->ttl_string,
 			"ssl_no_verify", &ucs->ssl_no_verify,
 			"debug", &ucs->debug,
+			"wait_workers", &ucs->wait_workers,
 		NULL)) {
 			uwsgi_log("[consul] unable to parse service: %s\n", usl->value);
 			exit(1);
@@ -216,8 +251,7 @@ static int consul_init() {
 		// let's spawn the thread
 		uwsgi_thread_new_with_data(consul_loop, ucs);
 	}
-	return 0;
-
+	return;
 error:
 	uwsgi_log("[consul] unable to generate JSON\n");
 	exit(1);
@@ -226,5 +260,5 @@ error:
 struct uwsgi_plugin consul_plugin = {
 	.name = "consul",
 	.options = consul_options,
-	.init = consul_init,
+	.postinit_apps = consul_setup,
 };
