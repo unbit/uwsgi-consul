@@ -1,12 +1,12 @@
 #include <uwsgi.h>
 #include <curl/curl.h>
 
-// give the plugin access to the global uwsgi stricture
+// give the plugin access to the global uwsgi structure
 extern struct uwsgi_server uwsgi;
 
 // this is the global configuration
 static struct uwsgi_consul {
-	// this i the list of registered services
+	// this is the list of registered services
 	struct uwsgi_string_list *services;
 } uconsul;
 
