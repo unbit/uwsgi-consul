@@ -26,3 +26,27 @@ The `consul-register` option is keyval based, and it takes the following keys:
 * url (the api base url, generally scheme and domain, example: http://localhost:8500)
 * register_url (the api url for registering the new service, if not specified is built as url+/v1/agent/service/register)
 * check_url (the api url for registering the service healthcheck, if not specified is built as url+/v1/agent/check/pass/service:+id)
+* id (the service id, required)
+* name (the service instance name, required)
+* port (the service instance port)
+* tags (space separated list of tags)
+* ttl (ttl for healthchecks, default 30)
+* ssl_no_verify (if the http api is over https you can disable certificate verification)
+* debug (print http transactions in logs, for debugging)
+* wait_workers (do not register the service until all of the workers are ready)
+
+How it works
+============
+
+Example
+=======
+
+```ini
+[uwsgi]
+plugins = python,consul
+; register instance 'servicenode0002' on port 9091 for service 'foobar', waiting for workers
+consul-register = url=http://localhost:8500,id=servicenode0002,name=foobar,port=9091,ttl=30,wait_workers=1
+http-socket = :9091
+processes = 4
+wsgi-file = myapp.py
+```
