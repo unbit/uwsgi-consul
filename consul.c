@@ -181,8 +181,8 @@ static void consul_setup() {
 			exit(1);
 		}
 
-		if (!ucs->id || !ucs->name) {
-			uwsgi_log("[consul] id and name are required: %s\n", usl->value);
+		if (!ucs->name) {
+			uwsgi_log("[consul] name is required: %s\n", usl->value);
 			exit(1);
 		}
 
@@ -199,26 +199,35 @@ static void consul_setup() {
 				uwsgi_log("[consul] url or check_url is required: %s\n", usl->value);
 				exit(1);
 			}
-			ucs->check_url = uwsgi_concat3(ucs->url, "/v1/agent/check/pass/service:", ucs->id);
+			if (ucs->id) {
+				ucs->check_url = uwsgi_concat3(ucs->url, "/v1/agent/check/pass/service:", ucs->id);
+			}
+			else {
+				ucs->check_url = uwsgi_concat3(ucs->url, "/v1/agent/check/pass/service:", ucs->name);
+			}
 		}
-
 
 		// convert ttl to integer
 		if (ucs->ttl_string) ucs->ttl = atoi(ucs->ttl_string);
 		// default 30 seconds TTL
 		if (!ucs->ttl) ucs->ttl = 30;
 
-
 		// pre-generate the JSON
-		// {"ID":"xxx","Name":"xxx","Port":xxx,"Check":{"TTL": "xxxs"},"Tags":["xxx",...]}
+		// {"Name":"xxx","ID":"xxx","Check":{"TTL": "xxxs"},"Port":xxx,"Tags":["xxx",...]}
 		ucs->ub = uwsgi_buffer_new(uwsgi.page_size);
-		if (uwsgi_buffer_append(ucs->ub, "{\"ID\":\"", 7)) goto error;
-		if (uwsgi_buffer_append_json(ucs->ub, ucs->id, strlen(ucs->id))) goto error;
-		if (uwsgi_buffer_append(ucs->ub, "\",\"Name\":\"", 10)) goto error;
+		if (uwsgi_buffer_append(ucs->ub, "{\"Name\":\"", 9)) goto error;
 		if (uwsgi_buffer_append_json(ucs->ub, ucs->name, strlen(ucs->name))) goto error;
+
+		// id ?
+		if (ucs->id) {
+			if (uwsgi_buffer_append(ucs->ub, "\",\"ID\":\"", 8)) goto error;
+			if (uwsgi_buffer_append_json(ucs->ub, ucs->id, strlen(ucs->id))) goto error;
+		}
+
 		if (uwsgi_buffer_append(ucs->ub, "\",\"Check\":{\"TTL\":\"", 18)) goto error;
 		if (uwsgi_buffer_num64(ucs->ub, ucs->ttl)) goto error;
 		if (uwsgi_buffer_append(ucs->ub, "s\"}", 3)) goto error;
+
 		// port ?
 		if (ucs->port) {
 			if (uwsgi_buffer_append(ucs->ub, ",\"Port\":", 8)) goto error;
