@@ -38,6 +38,12 @@ The `consul-register` option is keyval based, and it takes the following keys:
 How it works
 ============
 
+A thread for each configured service is spawned in the master.
+
+The thread registers the service with the api at the first run, then it start sending ttl checks every configured ttl/3.
+
+On error condition, the thread restart its cycle, re-registering the service
+
 Example
 =======
 
