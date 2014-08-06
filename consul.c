@@ -14,6 +14,7 @@ static struct uwsgi_consul {
 struct uwsgi_consul_service {
 	CURL *curl;
 	char *url;
+	char *unregister_url;
 	char *register_url;
 	char *check_url;
 	char *id;
@@ -156,6 +157,31 @@ next:
 	}
 }
 
+static void consul_unregister(struct uwsgi_consul_service *ucs) {
+	ucs->curl = curl_easy_init();
+        if (!ucs->curl) {
+        	uwsgi_log("[consul] unable to initialize curl\n");
+		return;
+        }
+	curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
+        curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
+        curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->unregister_url);
+	if (ucs->ssl_no_verify) {
+        	curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
+                curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        }
+        if (ucs->debug) {
+        	curl_easy_setopt(ucs->curl, CURLOPT_WRITEFUNCTION, consul_debug);
+                curl_easy_setopt(ucs->curl, CURLOPT_HEADER, 1L);
+        }
+
+        CURLcode res = curl_easy_perform(ucs->curl);
+        if (res != CURLE_OK) {
+        	uwsgi_log("[consul] error sending request to %s: %s\n", ucs->unregister_url, curl_easy_strerror(res));
+        }
+	curl_easy_cleanup(ucs->curl);
+}
+
 static void consul_setup() {
 	// check sanity of requested services and 
 	// create the uwsgi_consul_service structures.
@@ -167,6 +193,7 @@ static void consul_setup() {
 		if (uwsgi_kvlist_parse(usl->value, usl->len, ',', '=',
 			"url", &ucs->url,
 			"register_url", &ucs->register_url,
+			"unregister_url", &ucs->unregister_url,
 			"check_url", &ucs->check_url,
 			"id", &ucs->id,
 			"name", &ucs->name,
@@ -186,6 +213,10 @@ static void consul_setup() {
 			exit(1);
 		}
 
+		if (!ucs->id) {
+			ucs->id = ucs->name;
+		}
+
 		if (!ucs->register_url) {
 			if (!ucs->url) {
 				uwsgi_log("[consul] url or register_url is required: %s\n", usl->value);
@@ -199,13 +230,16 @@ static void consul_setup() {
 				uwsgi_log("[consul] url or check_url is required: %s\n", usl->value);
 				exit(1);
 			}
-			if (ucs->id) {
-				ucs->check_url = uwsgi_concat3(ucs->url, "/v1/agent/check/pass/service:", ucs->id);
-			}
-			else {
-				ucs->check_url = uwsgi_concat3(ucs->url, "/v1/agent/check/pass/service:", ucs->name);
-			}
+			ucs->check_url = uwsgi_concat3(ucs->url, "/v1/agent/check/pass/service:", ucs->id);
 		}
+
+		if (!ucs->unregister_url) {
+                        if (!ucs->url) {
+                                uwsgi_log("[consul] url or unregister_url is required: %s\n", usl->value);
+                                exit(1);
+                        }
+                        ucs->unregister_url = uwsgi_concat3(ucs->url, "/v1/agent/service/unregister/", ucs->id);
+                }
 
 		// convert ttl to integer
 		if (ucs->ttl_string) ucs->ttl = atoi(ucs->ttl_string);
@@ -218,11 +252,8 @@ static void consul_setup() {
 		if (uwsgi_buffer_append(ucs->ub, "{\"Name\":\"", 9)) goto error;
 		if (uwsgi_buffer_append_json(ucs->ub, ucs->name, strlen(ucs->name))) goto error;
 
-		// id ?
-		if (ucs->id) {
-			if (uwsgi_buffer_append(ucs->ub, "\",\"ID\":\"", 8)) goto error;
-			if (uwsgi_buffer_append_json(ucs->ub, ucs->id, strlen(ucs->id))) goto error;
-		}
+		if (uwsgi_buffer_append(ucs->ub, "\",\"ID\":\"", 8)) goto error;
+		if (uwsgi_buffer_append_json(ucs->ub, ucs->id, strlen(ucs->id))) goto error;
 
 		if (uwsgi_buffer_append(ucs->ub, "\",\"Check\":{\"TTL\":\"", 18)) goto error;
 		if (uwsgi_buffer_num64(ucs->ub, ucs->ttl)) goto error;
@@ -256,6 +287,9 @@ static void consul_setup() {
 		if (uwsgi_buffer_append(ucs->ub, "}\0", 2)) goto error;
 
 		uwsgi_log("[consul] built service JSON: %.*s\n", ucs->ub->pos, ucs->ub->buf);
+
+		// unregister the service (ignoring errors)
+		consul_unregister(ucs);
 
 		// let's spawn the thread
 		uwsgi_thread_new_with_data(consul_loop, ucs);
