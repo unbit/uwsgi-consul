@@ -28,7 +28,8 @@ struct uwsgi_consul_service {
 	int ttl;
 	char *ssl_no_verify;
 	char *debug;
-	char *wait_workers;
+	char *wait_workers_string;
+	int wait_workers;
 	// this buffer holds the pre-generated json
 	struct uwsgi_buffer *ub;
 };
@@ -46,7 +47,7 @@ static size_t consul_debug(void *ptr, size_t size, size_t nmemb, void *data) {
 static void consul_loop(struct uwsgi_thread *ut) {
 	struct uwsgi_consul_service *ucs = (struct uwsgi_consul_service *) ut->data;
 	uwsgi_log("[consul] thread for register_url=%s check_url=%s name=%s id=%s started\n", ucs->register_url, ucs->check_url, ucs->name, ucs->id);
-	if (ucs->wait_workers && uwsgi.numproc > 0) {
+	if (ucs->wait_workers > 0 && uwsgi.numproc > 0) {
 		uwsgi_log_verbose("[consul] waiting for workers before registering service ...\n");
 		for(;;) {
 			int ready = 1;
@@ -209,7 +210,7 @@ static void consul_setup() {
 			"ttl", &ucs->ttl_string,
 			"ssl_no_verify", &ucs->ssl_no_verify,
 			"debug", &ucs->debug,
-			"wait_workers", &ucs->wait_workers,
+			"wait_workers", &ucs->wait_workers_string,
 		NULL)) {
 			uwsgi_log("[consul] unable to parse service: %s\n", usl->value);
 			exit(1);
@@ -248,10 +249,17 @@ static void consul_setup() {
 			ucs->deregister_url = uwsgi_concat3(ucs->url, "/v1/agent/service/deregister/", ucs->id);
 		}
 
-		// convert ttl to integer
+		// convert TTL to integer and default to 30 seconds if not set
 		if (ucs->ttl_string) ucs->ttl = atoi(ucs->ttl_string);
-		// default 30 seconds TTL
 		if (!ucs->ttl) ucs->ttl = 30;
+
+		// wait_workers defaults to 1
+		if (ucs->wait_workers_string) {
+			ucs->wait_workers = atoi(ucs->wait_workers_string);
+		}
+		else {
+			ucs->wait_workers = 1;
+		}
 
 		// pre-generate the JSON
 		// {"Name":"xxx","ID":"xxx","Check":{"TTL": "xxxs"},"Port":xxx,"Tags":["xxx",...]}

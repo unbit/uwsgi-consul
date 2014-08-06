@@ -37,7 +37,7 @@ Optional key options:
 * ssl_no_verify (if the http api is over https you can disable certificate verification)
 * tags (space separated list of tags)
 * ttl (ttl for healthchecks in seconds, default 30)
-* wait_workers (do not register the service until all of the workers are ready)
+* wait_workers (do not register the service until all of the workers are ready, default 1)
 
 How it works
 ============
