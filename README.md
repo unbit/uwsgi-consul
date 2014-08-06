@@ -33,6 +33,7 @@ Optional key options:
 * id (the service instance unique id, used if multiple services share the same name)
 * port (the service instance port)
 * register_url (the api url for registering the new service, if not specified is built as url+/v1/agent/service/register)
+* deregister_url (the api url for deregistering services, if not specified is built as url+/v1/agent/service/deregister/+id)
 * ssl_no_verify (if the http api is over https you can disable certificate verification)
 * tags (space separated list of tags)
 * ttl (ttl for healthchecks in seconds, default 30)
