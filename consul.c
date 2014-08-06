@@ -116,7 +116,7 @@ static void consul_loop(struct uwsgi_thread *ut) {
 		for(;;) {
 			if (uconsul.deregistering) return;
 			// now call the pass check api
-			// initialize curl for the service
+			// initialize curl for the service check
 			ucs->curl = curl_easy_init();
 			if (!ucs->curl) {
 				uwsgi_log("[consul] unable to initialize curl\n");
@@ -160,32 +160,31 @@ static void consul_loop(struct uwsgi_thread *ut) {
 
 next:
 	if (uconsul.deregistering) return;
-	sleep(ucs->ttl);
+		sleep(ucs->ttl);
 	}
 }
 
 static void consul_deregister(struct uwsgi_consul_service *ucs) {
 	ucs->curl = curl_easy_init();
-        if (!ucs->curl) {
-        	uwsgi_log("[consul] unable to initialize curl\n");
+	if (!ucs->curl) {
+		uwsgi_log("[consul] unable to initialize curl\n");
 		return;
-        }
+	}
 	curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
-        curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
-        curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->deregister_url);
+	curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
+	curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->deregister_url);
 	if (ucs->ssl_no_verify) {
-        	curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
-                curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
-        }
-        if (ucs->debug) {
-        	curl_easy_setopt(ucs->curl, CURLOPT_WRITEFUNCTION, consul_debug);
-                curl_easy_setopt(ucs->curl, CURLOPT_HEADER, 1L);
-        }
-
-        CURLcode res = curl_easy_perform(ucs->curl);
-        if (res != CURLE_OK) {
-        	uwsgi_log("[consul] error sending request to %s: %s\n", ucs->deregister_url, curl_easy_strerror(res));
-        }
+		curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
+		curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
+	}
+	if (ucs->debug) {
+		curl_easy_setopt(ucs->curl, CURLOPT_WRITEFUNCTION, consul_debug);
+		curl_easy_setopt(ucs->curl, CURLOPT_HEADER, 1L);
+	}
+	CURLcode res = curl_easy_perform(ucs->curl);
+	if (res != CURLE_OK) {
+		uwsgi_log("[consul] error sending request to %s: %s\n", ucs->deregister_url, curl_easy_strerror(res));
+	}
 	curl_easy_cleanup(ucs->curl);
 }
 
@@ -242,12 +241,12 @@ static void consul_setup() {
 		}
 
 		if (!ucs->deregister_url) {
-                        if (!ucs->url) {
-                                uwsgi_log("[consul] url or deregister_url is required: %s\n", usl->value);
-                                exit(1);
-                        }
-                        ucs->deregister_url = uwsgi_concat3(ucs->url, "/v1/agent/service/deregister/", ucs->id);
-                }
+			if (!ucs->url) {
+				uwsgi_log("[consul] url or deregister_url is required: %s\n", usl->value);
+				exit(1);
+			}
+			ucs->deregister_url = uwsgi_concat3(ucs->url, "/v1/agent/service/deregister/", ucs->id);
+		}
 
 		// convert ttl to integer
 		if (ucs->ttl_string) ucs->ttl = atoi(ucs->ttl_string);
