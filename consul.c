@@ -111,6 +111,9 @@ static void consul_loop(struct uwsgi_thread *ut) {
 				curl_easy_cleanup(ucs->curl);
 				goto next;
 			}
+			else {
+				uwsgi_log("[consul] service %s registered succesfully\n", ucs->name);
+			}
 		}
 		curl_easy_cleanup(ucs->curl);
 
@@ -322,7 +325,7 @@ static void consul_deregister_all() {
 	struct uwsgi_string_list *usl;
 	uwsgi_foreach(usl, uconsul.services) {
 		struct uwsgi_consul_service *ucs = (struct uwsgi_consul_service *) usl->custom_ptr;
-		uwsgi_log("[consul] deregistering %s\n", ucs->deregister_url);
+		uwsgi_log("[consul] deregistering service %s ...\n", ucs->name);
 		consul_deregister(ucs);
 	}
 }
