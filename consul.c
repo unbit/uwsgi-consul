@@ -8,13 +8,16 @@ extern struct uwsgi_server uwsgi;
 static struct uwsgi_consul {
 	// this is the list of registered services
 	struct uwsgi_string_list *services;
+
+	// if 1, suspend the threads
+	int deregistering;
 } uconsul;
 
 // this memory structure is allocated for each service
 struct uwsgi_consul_service {
 	CURL *curl;
 	char *url;
-	char *unregister_url;
+	char *deregister_url;
 	char *register_url;
 	char *check_url;
 	char *id;
@@ -65,6 +68,7 @@ static void consul_loop(struct uwsgi_thread *ut) {
 		}
 	}
 	for(;;) {
+		if (uconsul.deregistering) return;
 		// initialize curl for the service
 		ucs->curl = curl_easy_init();
 		if (!ucs->curl) {
@@ -110,6 +114,7 @@ static void consul_loop(struct uwsgi_thread *ut) {
 		curl_easy_cleanup(ucs->curl);
 
 		for(;;) {
+			if (uconsul.deregistering) return;
 			// now call the pass check api
 			// initialize curl for the service
 			ucs->curl = curl_easy_init();
@@ -148,16 +153,18 @@ static void consul_loop(struct uwsgi_thread *ut) {
 				}
 			}
 			curl_easy_cleanup(ucs->curl);
+			if (uconsul.deregistering) return;
 			// wait for the ttl / 3
 			sleep(ucs->ttl / 3);
 		}
 
 next:
+	if (uconsul.deregistering) return;
 	sleep(ucs->ttl);
 	}
 }
 
-static void consul_unregister(struct uwsgi_consul_service *ucs) {
+static void consul_deregister(struct uwsgi_consul_service *ucs) {
 	ucs->curl = curl_easy_init();
         if (!ucs->curl) {
         	uwsgi_log("[consul] unable to initialize curl\n");
@@ -165,7 +172,7 @@ static void consul_unregister(struct uwsgi_consul_service *ucs) {
         }
 	curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
         curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
-        curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->unregister_url);
+        curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->deregister_url);
 	if (ucs->ssl_no_verify) {
         	curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
                 curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -177,7 +184,7 @@ static void consul_unregister(struct uwsgi_consul_service *ucs) {
 
         CURLcode res = curl_easy_perform(ucs->curl);
         if (res != CURLE_OK) {
-        	uwsgi_log("[consul] error sending request to %s: %s\n", ucs->unregister_url, curl_easy_strerror(res));
+        	uwsgi_log("[consul] error sending request to %s: %s\n", ucs->deregister_url, curl_easy_strerror(res));
         }
 	curl_easy_cleanup(ucs->curl);
 }
@@ -190,10 +197,11 @@ static void consul_setup() {
 	struct uwsgi_string_list *usl = NULL;
 	uwsgi_foreach(usl, uconsul.services) {
 		struct uwsgi_consul_service *ucs = uwsgi_calloc(sizeof(struct uwsgi_consul_service));
+		usl->custom_ptr = ucs;
 		if (uwsgi_kvlist_parse(usl->value, usl->len, ',', '=',
 			"url", &ucs->url,
 			"register_url", &ucs->register_url,
-			"unregister_url", &ucs->unregister_url,
+			"deregister_url", &ucs->deregister_url,
 			"check_url", &ucs->check_url,
 			"id", &ucs->id,
 			"name", &ucs->name,
@@ -233,12 +241,12 @@ static void consul_setup() {
 			ucs->check_url = uwsgi_concat3(ucs->url, "/v1/agent/check/pass/service:", ucs->id);
 		}
 
-		if (!ucs->unregister_url) {
+		if (!ucs->deregister_url) {
                         if (!ucs->url) {
-                                uwsgi_log("[consul] url or unregister_url is required: %s\n", usl->value);
+                                uwsgi_log("[consul] url or deregister_url is required: %s\n", usl->value);
                                 exit(1);
                         }
-                        ucs->unregister_url = uwsgi_concat3(ucs->url, "/v1/agent/service/unregister/", ucs->id);
+                        ucs->deregister_url = uwsgi_concat3(ucs->url, "/v1/agent/service/deregister/", ucs->id);
                 }
 
 		// convert ttl to integer
@@ -288,8 +296,8 @@ static void consul_setup() {
 
 		uwsgi_log("[consul] built service JSON: %.*s\n", ucs->ub->pos, ucs->ub->buf);
 
-		// unregister the service (ignoring errors)
-		consul_unregister(ucs);
+		// deregister the service (ignoring errors)
+		consul_deregister(ucs);
 
 		// let's spawn the thread
 		uwsgi_thread_new_with_data(consul_loop, ucs);
@@ -300,8 +308,21 @@ error:
 	exit(1);
 }
 
+static void consul_deregister_all() {
+	// this will end threads
+	uconsul.deregistering = 1;
+
+	struct uwsgi_string_list *usl;
+	uwsgi_foreach(usl, uconsul.services) {
+		struct uwsgi_consul_service *ucs = (struct uwsgi_consul_service *) usl->custom_ptr;
+		uwsgi_log("[consul] deregistering %s\n", ucs->deregister_url);
+		consul_deregister(ucs);
+	}
+}
+
 struct uwsgi_plugin consul_plugin = {
 	.name = "consul",
 	.options = consul_options,
 	.postinit_apps = consul_setup,
+	.master_cleanup = consul_deregister_all,
 };
