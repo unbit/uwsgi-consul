@@ -112,7 +112,7 @@ static void consul_loop(struct uwsgi_thread *ut) {
 				goto next;
 			}
 			else {
-				uwsgi_log("[consul] service %s registered succesfully\n", ucs->name);
+				uwsgi_log("[consul] service %s registered successfully\n", ucs->name);
 			}
 		}
 		curl_easy_cleanup(ucs->curl);
