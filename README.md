@@ -23,7 +23,7 @@ It allows your uWSGI instance to register as a service (with TTL health ckeck) t
 
 The `consul-register` option is keyval based, and it takes the following mendatory keys:
 
-* `name` : the service name
+* `name` : the service name, you can use the magic var %n to use your application's INI name
 * `url` : the api base url, generally scheme and domain, example: http://localhost:8500
 
 Optional key options:
