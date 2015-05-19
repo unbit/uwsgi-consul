@@ -28,6 +28,7 @@ The `consul-register` option is keyval based, and it takes the following mendato
 
 Optional key options:
 
+* `address` : the service instance address. Defaults to the consul agent address if not specified
 * `check_url` : the api url for registering the service healthcheck, if not specified is built as url+/v1/agent/check/pass/service:+id or name
 * `debug` : print http transactions in logs, for debugging
 * `deregister_url` : the api url for deregistering services, if not specified is built as url+/v1/agent/service/deregister/+id
