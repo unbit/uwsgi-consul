@@ -1,0 +1,7 @@
+# build artifacts
+.uwsgi_plugins_builder
+
+# vim
+*.swp
+
+consul_plugin.so

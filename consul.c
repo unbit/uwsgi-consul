@@ -16,19 +16,20 @@ static struct uwsgi_consul {
 // this memory structure is allocated for each service
 struct uwsgi_consul_service {
 	CURL *curl;
-	char *url;
-	char *deregister_url;
-	char *register_url;
+	char *address;
 	char *check_url;
+	char *debug;
+	char *deregister_url;
 	char *id;
 	char *name;
 	char *port;
+	char *register_url;
+	char *ssl_no_verify;
 	char *tags;
 	char *ttl_string;
-	int ttl;
-	char *ssl_no_verify;
-	char *debug;
+	char *url;
 	char *wait_workers_string;
+	int ttl;
 	int wait_workers;
 	// this buffer holds the pre-generated json
 	struct uwsgi_buffer *ub;
@@ -202,17 +203,18 @@ static void consul_setup() {
 		struct uwsgi_consul_service *ucs = uwsgi_calloc(sizeof(struct uwsgi_consul_service));
 		usl->custom_ptr = ucs;
 		if (uwsgi_kvlist_parse(usl->value, usl->len, ',', '=',
-			"url", &ucs->url,
-			"register_url", &ucs->register_url,
-			"deregister_url", &ucs->deregister_url,
+			"address", &ucs->address,
 			"check_url", &ucs->check_url,
+			"debug", &ucs->debug,
+			"deregister_url", &ucs->deregister_url,
 			"id", &ucs->id,
 			"name", &ucs->name,
 			"port", &ucs->port,
+			"register_url", &ucs->register_url,
+			"ssl_no_verify", &ucs->ssl_no_verify,
 			"tags", &ucs->tags,
 			"ttl", &ucs->ttl_string,
-			"ssl_no_verify", &ucs->ssl_no_verify,
-			"debug", &ucs->debug,
+			"url", &ucs->url,
 			"wait_workers", &ucs->wait_workers_string,
 		NULL)) {
 			uwsgi_log("[consul] unable to parse service: %s\n", usl->value);
@@ -265,13 +267,19 @@ static void consul_setup() {
 		}
 
 		// pre-generate the JSON
-		// {"Name":"xxx","ID":"xxx","Check":{"TTL": "xxxs"},"Port":xxx,"Tags":["xxx",...]}
+		// {"Name":"xxx","ID":"xxx","Address":"x.x.x.x","Check":{"TTL": "xxxs"},"Port":xxx,"Tags":["xxx",...]}
 		ucs->ub = uwsgi_buffer_new(uwsgi.page_size);
 		if (uwsgi_buffer_append(ucs->ub, "{\"Name\":\"", 9)) goto error;
 		if (uwsgi_buffer_append_json(ucs->ub, ucs->name, strlen(ucs->name))) goto error;
 
 		if (uwsgi_buffer_append(ucs->ub, "\",\"ID\":\"", 8)) goto error;
 		if (uwsgi_buffer_append_json(ucs->ub, ucs->id, strlen(ucs->id))) goto error;
+
+                // address
+		if (ucs->address) {
+                    if (uwsgi_buffer_append(ucs->ub, "\",\"Address\":\"", 13)) goto error;
+                    if (uwsgi_buffer_append_json(ucs->ub, ucs->address, strlen(ucs->address))) goto error;
+                }
 
 		if (uwsgi_buffer_append(ucs->ub, "\",\"Check\":{\"TTL\":\"", 18)) goto error;
 		if (uwsgi_buffer_num64(ucs->ub, ucs->ttl)) goto error;
