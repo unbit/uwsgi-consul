@@ -148,6 +148,7 @@ static void consul_loop(struct uwsgi_thread *ut) {
 			curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
 			curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
 			curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->check_url);
+			curl_easy_setopt(ucs->curl, CURLOPT_CUSTOMREQUEST, "PUT");
 			if (ucs->ssl_no_verify) {
 				curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
 				curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -201,6 +202,7 @@ static void consul_deregister(struct uwsgi_consul_service *ucs) {
 	curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
 	curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
 	curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->deregister_url);
+	curl_easy_setopt(ucs->curl, CURLOPT_CUSTOMREQUEST, "PUT");
 	if (ucs->ssl_no_verify) {
 		curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
 		curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
