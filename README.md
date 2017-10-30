@@ -28,7 +28,6 @@ The `consul-register` option is keyval based, and it takes the following mendato
 
 Optional key options:
 
-* `token` : the consul token to use.
 * `address` : the service instance address. Defaults to the consul agent address if not specified
 * `check_url` : the api url for registering the service healthcheck, if not specified is built as url+/v1/agent/check/pass/service:+id or name
 * `debug` : print http transactions in logs, for debugging
@@ -38,6 +37,7 @@ Optional key options:
 * `register_url` : the api url for registering the new service, if not specified is built as url+/v1/agent/service/register
 * `ssl_no_verify` : if the http api is over https you can disable certificate verification
 * `tags` : space separated list of tags
+* `token` : the consul token to use.
 * `ttl` : ttl for healthchecks in seconds, default 30
 * `wait_workers` : do not register the service until all of the workers are ready, default 1
 
