@@ -26,6 +26,7 @@ struct uwsgi_consul_service {
 	char *register_url;
 	char *ssl_no_verify;
 	char *tags;
+	char *token;
 	char *ttl_string;
 	char *url;
 	char *wait_workers_string;
@@ -77,11 +78,17 @@ static void consul_loop(struct uwsgi_thread *ut) {
 			uwsgi_log("[consul] unable to initialize curl\n");
 			goto next;
 		}
+		char *full_url = NULL;
 		struct curl_slist *headers = NULL;
 		headers = curl_slist_append(headers, "Content-Type: application/json");
+		if (ucs->token)
+		{
+			full_url = uwsgi_concat2("X-Consul-Token: ", ucs->token);
+			headers = curl_slist_append(headers, full_url);
+		}
 		curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
 		curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
-		curl_easy_setopt(ucs->curl, CURLOPT_HTTPHEADER, headers); 
+		curl_easy_setopt(ucs->curl, CURLOPT_HTTPHEADER, headers);
 		curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->register_url);
 		curl_easy_setopt(ucs->curl, CURLOPT_CUSTOMREQUEST, "PUT");
 		curl_easy_setopt(ucs->curl, CURLOPT_POSTFIELDS, ucs->ub->buf);
@@ -93,10 +100,13 @@ static void consul_loop(struct uwsgi_thread *ut) {
 			curl_easy_setopt(ucs->curl, CURLOPT_HEADER, 1L);
 			curl_easy_setopt(ucs->curl, CURLOPT_WRITEFUNCTION, consul_debug);
 		}
-		CURLcode res = curl_easy_perform(ucs->curl);	
+		CURLcode res = curl_easy_perform(ucs->curl);
 		curl_slist_free_all(headers);
+		if (full_url)
+			free(full_url);
+
 		if (res != CURLE_OK) {
-			uwsgi_log("[consul] error sending request to %s: %s\n", ucs->register_url, curl_easy_strerror(res));	
+			uwsgi_log("[consul] error sending request to %s: %s\n", ucs->register_url, curl_easy_strerror(res));
 			curl_easy_cleanup(ucs->curl);
 			goto next;
 		}
@@ -127,9 +137,18 @@ static void consul_loop(struct uwsgi_thread *ut) {
 				uwsgi_log("[consul] unable to initialize curl\n");
 				break;
 			}
+			char *full_url = NULL;
+			struct curl_slist *headers = NULL;
+			if (ucs->token)
+			{
+				full_url = uwsgi_concat2("X-Consul-Token: ", ucs->token);
+				headers = curl_slist_append(headers, full_url);
+				curl_easy_setopt(ucs->curl, CURLOPT_HTTPHEADER, headers);
+			}
 			curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
 			curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
 			curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->check_url);
+			curl_easy_setopt(ucs->curl, CURLOPT_CUSTOMREQUEST, "PUT");
 			if (ucs->ssl_no_verify) {
 				curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
 				curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -139,6 +158,11 @@ static void consul_loop(struct uwsgi_thread *ut) {
 				curl_easy_setopt(ucs->curl, CURLOPT_HEADER, 1L);
 			}
 			res = curl_easy_perform(ucs->curl);
+			if (headers)
+			{
+				curl_slist_free_all(headers);
+				free(full_url);
+			}
 			if (res != CURLE_OK) {
 				uwsgi_log("[consul] error sending request to %s: %s\n", ucs->check_url, curl_easy_strerror(res));
 				curl_easy_cleanup(ucs->curl);
@@ -175,9 +199,18 @@ static void consul_deregister(struct uwsgi_consul_service *ucs) {
 		uwsgi_log("[consul] unable to initialize curl\n");
 		return;
 	}
+	char *full_url = NULL;
+	struct curl_slist *headers = NULL;
+	if (ucs->token)
+	{
+		full_url = uwsgi_concat2("X-Consul-Token: ", ucs->token);
+		headers = curl_slist_append(headers, full_url);
+		curl_easy_setopt(ucs->curl, CURLOPT_HTTPHEADER, headers);
+	}
 	curl_easy_setopt(ucs->curl, CURLOPT_TIMEOUT, ucs->ttl);
 	curl_easy_setopt(ucs->curl, CURLOPT_CONNECTTIMEOUT, ucs->ttl);
 	curl_easy_setopt(ucs->curl, CURLOPT_URL, ucs->deregister_url);
+	curl_easy_setopt(ucs->curl, CURLOPT_CUSTOMREQUEST, "PUT");
 	if (ucs->ssl_no_verify) {
 		curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYPEER, 0L);
 		curl_easy_setopt(ucs->curl, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -187,6 +220,11 @@ static void consul_deregister(struct uwsgi_consul_service *ucs) {
 		curl_easy_setopt(ucs->curl, CURLOPT_HEADER, 1L);
 	}
 	CURLcode res = curl_easy_perform(ucs->curl);
+	if (headers)
+	{
+		curl_slist_free_all(headers);
+		free(full_url);
+	}
 	if (res != CURLE_OK) {
 		uwsgi_log("[consul] error sending request to %s: %s\n", ucs->deregister_url, curl_easy_strerror(res));
 	}
@@ -194,7 +232,7 @@ static void consul_deregister(struct uwsgi_consul_service *ucs) {
 }
 
 static void consul_setup() {
-	// check sanity of requested services and 
+	// check sanity of requested services and
 	// create the uwsgi_consul_service structures.
 	// each structure will generate a thread sending healthchecks
 	// in background at the specified frequency (ttl)
@@ -213,6 +251,7 @@ static void consul_setup() {
 			"register_url", &ucs->register_url,
 			"ssl_no_verify", &ucs->ssl_no_verify,
 			"tags", &ucs->tags,
+			"token", &ucs->token,
 			"ttl", &ucs->ttl_string,
 			"url", &ucs->url,
 			"wait_workers", &ucs->wait_workers_string,
